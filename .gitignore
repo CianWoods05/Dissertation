@@ -64,3 +64,9 @@ logs/
 .env
 *.key
 *.pem
+
+# ── Local dev helpers (not part of the reproducible project) ───────────
+# Batch scripts I use on my Windows machine to wire up the conda env,
+# double-click tests, etc. Not needed for reproducibility on other machines.
+_*.bat
+_*.log

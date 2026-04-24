@@ -41,10 +41,44 @@ Project/
 3. `notebooks/03_performance_prediction.ipynb` — Next-game regression models
 4. `notebooks/04_player_clustering.ipynb` — Unsupervised archetype discovery
 
+## Reproducing the dissertation experiments
+
+From the project root:
+
+```bash
+# Reproduce every experiment reported in the dissertation (~1-2 minutes)
+python main.py --task all --seed 42
+
+# Just the cross-season evaluation (Section 4.5)
+python main.py --task cross-season
+
+# 5-fold classification comparison (Chapter 4)
+python main.py --task classify
+
+# Unsupervised clustering (Chapter 6)
+python main.py --task cluster --output-dir results
+```
+
+Results are written to `results/` (CSV, JSON, `experiments.log`).
+
+## Running the test suite
+
+```bash
+pytest                  # fast unit tests only
+pytest -m slow          # end-to-end experiment smoke tests
+```
+
+CI runs the fast tests against Python 3.10 and 3.11 on every push
+(see `.github/workflows/ci.yml`).
+
 ## Key Files
 
-- `Project_Plan.md` — Full planning document with ML ideas and dissertation structure
+- `main.py` — CLI entrypoint (thin wrapper around `src/experiments.py`)
 - `src/data_loader.py` — Loads all CSVs into a unified pandas DataFrame
+- `src/features.py` — Feature engineering and cross-season split helpers
+- `src/models.py` — Classifier / regressor / clusterer definitions
+- `src/experiments.py` — Reproducible experiment runner
+- `Project_Plan.md` — Full planning document with ML ideas and dissertation structure
 - `requirements.txt` — Python dependencies
 
 ## Data Note

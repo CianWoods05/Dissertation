@@ -1,0 +1,17 @@
+{
+  "train_seasons": [
+    "22_23",
+    "23_24"
+  ],
+  "test_seasons": [
+    "24_25"
+  ],
+  "n_train": 65,
+  "n_test": 25,
+  "n_features": 152,
+  "best_model": "SVM (RBF)",
+  "best_accuracy": 0.88,
+  "best_f1": 0.896551724137931,
+  "best_roc_auc": 0.8717948717948718,
+  "seed": 42
+}

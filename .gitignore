@@ -1,0 +1,66 @@
+# ── Python ─────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+ENV/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ── IDE / editor ───────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.spyproject/
+.spyderproject
+
+# ── OS ─────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Project-specific ───────────────────────────────────────────────────
+# Raw data — treat as source-of-truth, but exclude large/derived artefacts
+data/processed/*
+!data/processed/.gitkeep
+
+# Trained models (binary, regenerable)
+models/*
+!models/.gitkeep
+
+# Generated figures are kept in results/ so they are committed,
+# but intermediate scratch plots live in /tmp
+tmp/
+logs/
+*.log
+
+# Secrets
+.env
+*.key
+*.pem

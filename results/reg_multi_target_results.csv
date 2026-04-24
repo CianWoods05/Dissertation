@@ -1,0 +1,6 @@
+target,rmse,mae,r2
+total_metres_made,20.6458,13.7037,0.1647
+effective_tackle,2.4556,1.8978,0.1201
+try,0.5013,0.3176,-0.1354
+linebreak_made,0.6991,0.446,-0.0932
+support_pos_attack_ruck,5.1503,4.0205,0.2858

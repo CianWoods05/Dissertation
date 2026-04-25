@@ -14,9 +14,11 @@ Public entry points
 - run_cross_season      : Train on historical seasons, evaluate on a held-out
                           future season. Produces the real 4.5 accuracy number
                           referenced in the dissertation.
+- run_regression       : Next-game performance prediction (Chapter 5); writes
+                          reg_single_target_results.csv and reg_multi_target_results.csv.
 - run_clustering        : Unsupervised player archetype discovery; writes
                           cluster_algorithm_comparison.csv and cluster_k_selection.csv.
-- run_all               : Convenience wrapper that runs the three above in sequence.
+- run_all               : Convenience wrapper that runs all four above in sequence.
 
 Usage (from the Project/ directory)
 -----------------------------------
@@ -53,24 +55,31 @@ from data_loader import (  # noqa: E402
     load_all_games,
     pivot_to_wide,
     add_derived_features,
+    ALL_RAW_FEATURES,
 )
 from features import (  # noqa: E402
     build_classification_matrix,
     build_clustering_matrix,
     get_cross_season_split,
+    RollingWindowFeatures,
 )
 from models import (  # noqa: E402
     evaluate_classifiers,
     evaluate_clustering,
+    evaluate_regressors,
     find_optimal_k,
     CLASSIFIERS,
 )
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import RobustScaler
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import KFold, cross_val_predict
+from sklearn.multioutput import MultiOutputRegressor
 from sklearn.metrics import (
     accuracy_score, f1_score, roc_auc_score,
     classification_report, confusion_matrix,
+    mean_squared_error, mean_absolute_error, r2_score,
 )
 
 
@@ -353,17 +362,116 @@ def run_clustering(seed: int = DEFAULT_SEED,
     return {"k_selection": k_df, "algorithm_comparison": algo_df}
 
 
+PERFORMANCE_TARGETS = [
+    "total_metres_made",
+    "effective_tackle",
+    "try",
+    "linebreak_made",
+    "support_pos_attack_ruck",
+]
+
+
+def run_regression(seed: int = DEFAULT_SEED,
+                   output_dir: Path = RESULTS_DIR,
+                   window: int = 3,
+                   targets: Optional[List[str]] = None,
+                   logger: Optional[logging.Logger] = None) -> Dict[str, pd.DataFrame]:
+    """
+    Next-game performance prediction (Chapter 5).
+
+    Uses :class:`RollingWindowFeatures` to turn each player's chronologically
+    ordered games into (rolling-mean + rolling-std features → next-game targets)
+    rows, then runs every regressor with 5-fold KFold CV (no shuffle, so order
+    is preserved roughly temporally).
+
+    Writes
+    ------
+    results/reg_single_target_results.csv  — per-model, per-target RMSE/MAE/R²
+    results/reg_multi_target_results.csv   — RandomForest MultiOutput per-target
+    """
+    log = logger or configure_logging(output_dir)
+    set_seed(seed)
+    targets = targets or PERFORMANCE_TARGETS
+
+    log.info("─" * 70)
+    log.info("EXPERIMENT: Performance prediction (rolling window=%d)", window)
+    log.info("  Targets: %s", targets)
+    log.info("─" * 70)
+
+    data = load_dataset(logger=log)
+
+    # Build rolling-window matrix (one row per player-game with >= window prior games)
+    transformer = RollingWindowFeatures(
+        window=window,
+        feature_cols=ALL_RAW_FEATURES,
+        target_cols=targets,
+    )
+    df_rolled = transformer.fit_transform(data.final)
+    log.info("Rolling dataset: %s", df_rolled.shape)
+
+    feat_cols = [c for c in df_rolled.columns
+                 if c.endswith("_roll_mean") or c.endswith("_roll_std")]
+    tgt_cols = [f"target_{t}" for t in targets]
+    X = df_rolled[feat_cols].fillna(0).to_numpy()
+    Y = df_rolled[tgt_cols].fillna(0).to_numpy()
+    log.info("X=%s,  Y=%s,  features=%d", X.shape, Y.shape, len(feat_cols))
+
+    # ── Single-target sweep ────────────────────────────────────────────────
+    log.info("── Single-target regression (5-fold KFold, no shuffle) ──")
+    per_target = []
+    for i, tgt in enumerate(targets):
+        log.info("Target: %s", tgt)
+        df_t = evaluate_regressors(X, Y[:, i], cv_folds=5, target_name=tgt)
+        per_target.append(df_t)
+    single = pd.concat(per_target, ignore_index=True)
+    single_path = output_dir / "reg_single_target_results.csv"
+    single.to_csv(single_path, index=False)
+    log.info("Wrote %s", single_path)
+
+    best_rows = single.loc[single.groupby("target")["rmse"].idxmin(),
+                           ["target", "model", "rmse", "r2"]]
+    log.info("Best model per target:\n%s", best_rows.to_string(index=False))
+
+    # ── Multi-target (one MultiOutputRegressor across all targets) ─────────
+    log.info("── Multi-target regression (RandomForest MultiOutput) ──")
+    multi_rf = MultiOutputRegressor(
+        RandomForestRegressor(n_estimators=200, random_state=seed)
+    )
+    cv = KFold(n_splits=5, shuffle=False)
+    Y_pred = cross_val_predict(multi_rf, X, Y, cv=cv)
+
+    multi_rows = []
+    for i, tgt in enumerate(targets):
+        rmse = float(np.sqrt(mean_squared_error(Y[:, i], Y_pred[:, i])))
+        mae = float(mean_absolute_error(Y[:, i], Y_pred[:, i]))
+        r2 = float(r2_score(Y[:, i], Y_pred[:, i]))
+        multi_rows.append({
+            "target": tgt,
+            "rmse": round(rmse, 4),
+            "mae": round(mae, 4),
+            "r2": round(r2, 4),
+        })
+        log.info("  %-30s rmse=%.3f  mae=%.3f  r2=%.3f", tgt, rmse, mae, r2)
+    multi = pd.DataFrame(multi_rows)
+    multi_path = output_dir / "reg_multi_target_results.csv"
+    multi.to_csv(multi_path, index=False)
+    log.info("Wrote %s", multi_path)
+
+    return {"single_target": single, "multi_target": multi}
+
+
 # ── 6. run_all ──────────────────────────────────────────────────────────────
 
 def run_all(seed: int = DEFAULT_SEED,
             output_dir: Path = RESULTS_DIR) -> dict:
-    """Run classification + cross-season + clustering in one go."""
+    """Run classification + cross-season + regression + clustering in one go."""
     log = configure_logging(output_dir)
     log.info("▶ run_all started (seed=%d, output=%s)", seed, output_dir)
     t0 = time.perf_counter()
     out = {
         "classification":      run_classification(seed=seed, output_dir=output_dir, logger=log),
         "cross_season":        run_cross_season(seed=seed, output_dir=output_dir, logger=log),
+        "regression":          run_regression(seed=seed, output_dir=output_dir, logger=log),
         "clustering":          run_clustering(seed=seed, output_dir=output_dir, logger=log),
     }
     log.info("▶ run_all finished in %.1fs", time.perf_counter() - t0)
@@ -378,7 +486,7 @@ def _build_arg_parser():
         prog="experiments",
         description="Reproducible experiment runner for the rugby ML dissertation.",
     )
-    p.add_argument("--task", choices=["classify", "cross-season", "cluster", "all"],
+    p.add_argument("--task", choices=["classify", "cross-season", "regress", "cluster", "all"],
                    default="all",
                    help="Which experiment to run (default: all).")
     p.add_argument("--seed", type=int, default=DEFAULT_SEED,
@@ -406,6 +514,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             test_seasons=args.test_seasons,
             logger=logger,
         )
+    elif args.task == "regress":
+        run_regression(seed=args.seed, output_dir=args.output_dir, logger=logger)
     elif args.task == "cluster":
         run_clustering(seed=args.seed, output_dir=args.output_dir, logger=logger)
     elif args.task == "all":
